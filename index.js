@@ -2,7 +2,20 @@ import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
-import NUMOGRAM_SVG from './Numogram.svg?raw';
+const NUMOGRAM_SVG = await loadNumogramSvg();
+
+// works both from the vite build (svg copied to dist root) and served raw from the repo
+async function loadNumogramSvg() {
+
+	for ( const url of [ 'Numogram.svg', 'public/Numogram.svg' ] ) {
+
+		const response = await fetch( url );
+		if ( response.ok ) return response.text();
+
+	}
+	throw new Error( 'Numogram.svg could not be loaded' );
+
+}
 
 let camera, scene, renderer, controls, root;
 
