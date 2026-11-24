@@ -2,20 +2,13 @@ import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
-const NUMOGRAM_SVG = await loadNumogramSvg();
+const response = await fetch( 'Numogram.svg' );
+if ( ! response.ok ) throw new Error( 'Numogram.svg could not be loaded' );
+const NUMOGRAM_SVG = await response.text();
 
-// works both from the vite build (svg copied to dist root) and served raw from the repo
-async function loadNumogramSvg() {
-
-	for ( const url of [ 'Numogram.svg', 'public/Numogram.svg' ] ) {
-
-		const response = await fetch( url );
-		if ( response.ok ) return response.text();
-
-	}
-	throw new Error( 'Numogram.svg could not be loaded' );
-
-}
+// SVGLoader doesn't implement url(#...) gradient fills; remap them to a sentinel color
+const FADE_SENTINEL = '#FF00FF';
+const SANITIZED_SVG = NUMOGRAM_SVG.replace( /fill="url\(#[^)]*\)"/g, `fill="${ FADE_SENTINEL }"` );
 
 let camera, scene, renderer, controls, root;
 
@@ -64,7 +57,7 @@ function init() {
 
 function loadNumogram() {
 
-	const data = new SVGLoader().parse( NUMOGRAM_SVG );
+	const data = new SVGLoader().parse( SANITIZED_SVG );
 
 	const svg = new THREE.Group();
 
@@ -87,7 +80,7 @@ function loadNumogram() {
 		// filled paths -> extruded shapes; gradient fills (url(#...)) -> translucent flows
 		if ( style.fill !== undefined && style.fill !== 'none' ) {
 
-			const material = style.fill.startsWith( 'url(' ) ? fadeMaterial : fillMaterial;
+			const material = style.fill === FADE_SENTINEL ? fadeMaterial : fillMaterial;
 
 			for ( const shape of SVGLoader.createShapes( path ) ) {
 
