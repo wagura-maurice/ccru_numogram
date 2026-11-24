@@ -6,9 +6,18 @@ const response = await fetch( 'Numogram.svg' );
 if ( ! response.ok ) throw new Error( 'Numogram.svg could not be loaded' );
 const NUMOGRAM_SVG = await response.text();
 
-// SVGLoader doesn't implement url(#...) gradient fills; remap them to a sentinel color
-const FADE_SENTINEL = '#FF00FF';
-const SANITIZED_SVG = NUMOGRAM_SVG.replace( /fill="url\(#[^)]*\)"/g, `fill="${ FADE_SENTINEL }"` );
+// SVGLoader doesn't implement url(#...) gradient fills; remap each gradient
+// (the five currents, one per syzygy) to its own display color
+const CURRENT_COLORS = {
+	paint0_linear_15_2: 0xa05cff,
+	paint1_linear_15_2: 0x35d0ff,
+	paint2_linear_15_2: 0x3aff8f,
+	paint3_linear_15_2: 0xff3ea0,
+	paint4_linear_15_2: 0xffb020
+};
+
+const SANITIZED_SVG = NUMOGRAM_SVG.replace( /fill="url\(#([^)]+)\)"/g,
+	( match, id ) => `fill="#${ ( CURRENT_COLORS[ id ] || 0x888888 ).toString( 16 ).padStart( 6, '0' ) }"` );
 
 let camera, scene, renderer, controls, root, zonesLayer, channelsLayer;
 
@@ -17,15 +26,17 @@ let camera, scene, renderer, controls, root, zonesLayer, channelsLayer;
 const ZONE_Z = 140;
 const CHANNEL_Z = - 170;
 
-// the source SVG is black-on-white; render it as light ink to match the dark scene
-const INK = 0xe8e6e0;
+// the source SVG is black-on-white; recolor it for the dark scene
+const INK = 0xf2e4c9;      // zones, digits, arrowheads - warm ivory
+const CHANNEL = 0x6f4dff;  // the gate/channel web - violet
+const RING = 0xff4fa3;     // syzygy circle strokes - pink
 
 init();
 
 function init() {
 
 	scene = new THREE.Scene();
-	scene.background = new THREE.Color( 0x050505 );
+	scene.background = new THREE.Color( 0x0a0812 );
 
 	camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 10000 );
 	camera.position.z = 2200;
@@ -39,7 +50,7 @@ function init() {
 	light2.position.set( - 1, - 1, 1 );
 	scene.add( light2 );
 
-	scene.add( new THREE.AmbientLight( 0xffffff, 0.4 ) );
+	scene.add( new THREE.AmbientLight( 0xffffff, 0.55 ) );
 
 	root = new THREE.Group();
 	scene.add( root );
@@ -78,9 +89,29 @@ function loadNumogram() {
 		bevelSegments: 2
 	};
 
-	const fillMaterial = new THREE.MeshPhongMaterial( { color: INK, specular: 0x222222, shininess: 20 } );
-	const fadeMaterial = new THREE.MeshPhongMaterial( { color: INK, transparent: true, opacity: 0.35, depthWrite: false } );
-	const strokeMaterial = new THREE.MeshPhongMaterial( { color: INK, side: THREE.DoubleSide } );
+	const fillMaterial = new THREE.MeshPhongMaterial( { color: INK, emissive: 0x201505, specular: 0x222222, shininess: 20 } );
+	const channelMaterial = new THREE.MeshPhongMaterial( { color: CHANNEL, emissive: 0x160a3a, specular: 0x222222, shininess: 20 } );
+	const strokeMaterial = new THREE.MeshPhongMaterial( { color: RING, emissive: 0x330d20, side: THREE.DoubleSide } );
+	const flowMaterials = new Map();
+
+	function flowMaterial( hex ) {
+
+		let material = flowMaterials.get( hex );
+		if ( ! material ) {
+
+			material = new THREE.MeshPhongMaterial( {
+				color: hex,
+				emissive: new THREE.Color( hex ).multiplyScalar( 0.3 ),
+				transparent: true,
+				opacity: 0.55,
+				depthWrite: false
+			} );
+			flowMaterials.set( hex, material );
+
+		}
+		return material;
+
+	}
 
 	for ( const path of data.paths ) {
 
@@ -89,9 +120,11 @@ function loadNumogram() {
 		// filled paths -> extruded shapes; gradient fills (url(#...)) -> translucent flows
 		if ( style.fill !== undefined && style.fill !== 'none' ) {
 
-			const material = style.fill === FADE_SENTINEL ? fadeMaterial : fillMaterial;
+			const isFlow = style.fill !== 'black';
 			// the channel web is one huge compound path; everything else lives with the zones
-			const layer = material === fadeMaterial ? currentsLayer
+			const material = isFlow ? flowMaterial( style.fill )
+				: ( path.subPaths.length > 10 ? channelMaterial : fillMaterial );
+			const layer = isFlow ? currentsLayer
 				: ( path.subPaths.length > 10 ? channelsLayer : zonesLayer );
 
 			for ( const shape of SVGLoader.createShapes( path ) ) {
