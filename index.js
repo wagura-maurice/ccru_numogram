@@ -10,7 +10,12 @@ const NUMOGRAM_SVG = await response.text();
 const FADE_SENTINEL = '#FF00FF';
 const SANITIZED_SVG = NUMOGRAM_SVG.replace( /fill="url\(#[^)]*\)"/g, `fill="${ FADE_SENTINEL }"` );
 
-let camera, scene, renderer, controls, root;
+let camera, scene, renderer, controls, root, zonesLayer, channelsLayer;
+
+// layer offsets in svg units (before global scaling): zones/digits in front,
+// currents in the middle, the channel web behind
+const ZONE_Z = 140;
+const CHANNEL_Z = - 170;
 
 // the source SVG is black-on-white; render it as light ink to match the dark scene
 const INK = 0xe8e6e0;
@@ -60,6 +65,10 @@ function loadNumogram() {
 	const data = new SVGLoader().parse( SANITIZED_SVG );
 
 	const svg = new THREE.Group();
+	zonesLayer = new THREE.Group();
+	const currentsLayer = new THREE.Group();
+	channelsLayer = new THREE.Group();
+	svg.add( zonesLayer, currentsLayer, channelsLayer );
 
 	const extrudeSettings = {
 		depth: 80,
@@ -81,11 +90,14 @@ function loadNumogram() {
 		if ( style.fill !== undefined && style.fill !== 'none' ) {
 
 			const material = style.fill === FADE_SENTINEL ? fadeMaterial : fillMaterial;
+			// the channel web is one huge compound path; everything else lives with the zones
+			const layer = material === fadeMaterial ? currentsLayer
+				: ( path.subPaths.length > 10 ? channelsLayer : zonesLayer );
 
 			for ( const shape of SVGLoader.createShapes( path ) ) {
 
 				const geometry = new THREE.ExtrudeGeometry( shape, extrudeSettings );
-				svg.add( new THREE.Mesh( geometry, material ) );
+				layer.add( new THREE.Mesh( geometry, material ) );
 
 			}
 
@@ -97,13 +109,16 @@ function loadNumogram() {
 			for ( const subPath of path.subPaths ) {
 
 				const geometry = SVGLoader.pointsToStroke( subPath.getPoints(), style );
-				if ( geometry ) svg.add( new THREE.Mesh( geometry, strokeMaterial ) );
+				if ( geometry ) zonesLayer.add( new THREE.Mesh( geometry, strokeMaterial ) );
 
 			}
 
 		}
 
 	}
+
+	zonesLayer.position.z = ZONE_Z;
+	channelsLayer.position.z = CHANNEL_Z;
 
 	// scale to a fixed size, flip Y (SVG's y-axis points down), center on origin
 
@@ -132,9 +147,14 @@ function animate() {
 
 	controls.update();
 
-	const time = Date.now() * 0.0004;
-	root.rotation.x = time;
-	root.rotation.y = time * 0.7;
+	const time = Date.now() * 0.001;
+
+	const breathe = 1 + Math.sin( time * 0.6 ) * 0.12;
+	zonesLayer.position.z = ZONE_Z * breathe;
+	channelsLayer.position.z = CHANNEL_Z * breathe;
+
+	root.rotation.y = Math.sin( time * 0.4 ) * 0.38;
+	root.rotation.x = Math.sin( time * 0.27 ) * 0.08;
 
 	renderer.render( scene, camera );
 
